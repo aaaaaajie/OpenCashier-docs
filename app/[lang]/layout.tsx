@@ -1,21 +1,15 @@
-import { Footer, Layout, Navbar } from 'nextra-theme-docs'
+import { Layout, Navbar } from 'nextra-theme-docs'
 import { getPageMap } from 'nextra/page-map'
 import 'nextra-theme-docs/style.css'
 import LocaleHomeSwitch from '../components/locale-home-switch'
 
-const navbar = (
+const navBar = (
   <Navbar
     logo={<b>OpenCashier</b>}
     projectLink="https://github.com/aaaaaajie/OpenCashier"
   >
     <LocaleHomeSwitch />
   </Navbar>
-)
-
-const footer = (
-  <Footer>
-    MIT {new Date().getFullYear()} © OpenCashier.
-  </Footer>
 )
 
 export default async function LangLayout({
@@ -30,8 +24,7 @@ export default async function LangLayout({
   return (
     <>
       <Layout
-        navbar={navbar}
-        footer={footer}
+        navbar={navBar}
         pageMap={await getPageMap(`/${lang}`)}
         docsRepositoryBase="https://github.com/aaaaaajie/OpenCashier-docs/blob/main"
       >
