@@ -111,7 +111,29 @@ At minimum, merchants must provide:
 
 > If the order must use a specific brand, pass the corresponding `allowedChannels` so the platform can jump directly to the final action instead of showing an unnecessary brand selection page.
 
-### 2.4 Base URLs
+### 2.4 allowedChannels reference
+
+`allowedChannels` defines the scope the platform can use to complete this order. `OPENCASHIER_ALLOWED_CHANNELS` in `merchant-quickstart` is just the same list written as a comma-separated `.env` value and forwarded to create-order `allowedChannels`.
+
+| Channel code | Use this for | Current notes |
+| --- | --- | --- |
+| `alipay_qr` | Show an Alipay QR code on a desktop cashier page | Alipay support is available |
+| `alipay_page` | Redirect a desktop browser to Alipay web payment | Quickstart default; best fit for the two-process API + quickstart path |
+| `alipay_wap` | Redirect a mobile browser to Alipay mobile web payment | Alipay support is available |
+| `wechat_qr` | Show a WeChat Pay QR code in desktop scenarios | WeChat Pay is still in testing |
+| `wechat_jsapi` | WeChat in-app WebView or official account scenarios | WeChat Pay is still in testing; only use inside WeChat |
+| `stripe_checkout` | Redirect directly to Stripe Hosted Checkout | Stripe support is available |
+| `paypal_checkout` | Future PayPal Checkout scenarios | Reserved code; real transactions are not open yet |
+
+Recommended values:
+
+- Alipay brand routing: `["alipay_qr", "alipay_page", "alipay_wap"]`
+- quickstart direct redirect default: `["alipay_page"]`
+- Stripe only: `["stripe_checkout"]`
+
+If you already know the exact final payment entry you want, prefer a single channel. If you want OpenCashier to choose the final action within the same payment brand based on device and capability, pass the full brand set.
+
+### 2.5 Base URLs
 
 - API base: `{your-host}/api/v1`
 - Swagger: `{your-host}/api/docs`
@@ -779,3 +801,100 @@ If you want the minimal integration path, follow:
 6. Integrate refunds with `POST /api/v1/refunds`
 
 For most cases, this is sufficient for the first integration.
+
+If you want a runnable merchant-side reference, use [merchant-quickstart](https://github.com/aaaaaajie/OpenCashier/tree/main/examples/merchant-quickstart) from the repo. It keeps signing, create order, redirect, notification verification, and result-page query fallback in one small app.
+
+### 9.1 Run the example first
+
+```bash
+pnpm install
+pnpm dev:api
+pnpm dev:merchant-quickstart
+```
+
+Then open `http://127.0.0.1:4100`. Full setup notes are in [examples/merchant-quickstart/README.md](https://github.com/aaaaaajie/OpenCashier/blob/main/examples/merchant-quickstart/README.md).
+
+### 9.2 Compare the signing and create-order code
+
+The snippet below is taken from `merchant-quickstart` `src/signing.ts` and `src/opencashier-client.ts`. It maps directly to section 4 and section 5.1 in this guide: build the signing content first, then call create order with the signed headers.
+
+```ts
+const timestamp = Date.now().toString();
+const nonce = createNonce();
+const signingContent = buildMerchantRequestSigningContent({
+  method: "POST",
+  path: "/api/v1/orders",
+  appId: this.appId,
+  timestamp,
+  nonce,
+  body: input
+});
+const signature = signMerchantRequest(this.appSecret, signingContent);
+
+const response = await fetch(`${this.apiBaseUrl}/orders`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "X-App-Id": this.appId,
+    "X-Timestamp": timestamp,
+    "X-Nonce": nonce,
+    "X-Sign-Type": "HMAC-SHA256",
+    "X-Sign": signature,
+    "Idempotency-Key": `order:${input.merchantOrderNo}:create`
+  },
+  body: stableStringify(input)
+});
+```
+
+### 9.3 Compare the redirect to `cashierUrl`
+
+After create order, `merchant-quickstart` stores a local snapshot and sends the browser straight to the platform `cashierUrl`:
+
+```ts
+const created = await opencashier.createOrder(createOrderInput);
+
+store.recordCreatedOrder({
+  merchantOrderNo,
+  platformOrderNo: created.platformOrderNo,
+  amount: createOrderInput.amount,
+  currency: createOrderInput.currency,
+  subject: createOrderInput.subject,
+  status: created.status,
+  cashierUrl: created.cashierUrl,
+  notifyUrl: createOrderInput.notifyUrl,
+  returnUrl
+});
+
+redirect(response, created.cashierUrl);
+```
+
+### 9.4 Compare notification verification and query fallback
+
+Notification handling maps to section 6. Result-page query fallback maps to section 5.3. `merchant-quickstart` verifies notifications with the same `appSecret`, writes the notify payload into local order state, and also queries the order again on the result page.
+
+```ts
+if (
+  !verifyPlatformNotify({
+    headers: request.headers,
+    rawBody,
+    appSecret: config.appSecret
+  })
+) {
+  response.writeHead(401);
+  response.end("invalid signature");
+  return;
+}
+
+const payload = JSON.parse(rawBody);
+store.recordNotify({
+  notifyId: payload.notifyId,
+  eventType: payload.eventType,
+  platformOrderNo: payload.platformOrderNo,
+  merchantOrderNo: payload.merchantOrderNo,
+  status: payload.status,
+  channel: payload.channel
+});
+
+const queriedOrder = await opencashier.getOrderByMerchantOrderNo(merchantOrderNo);
+store.recordQueryResult(queriedOrder);
+```

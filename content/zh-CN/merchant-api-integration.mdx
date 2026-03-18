@@ -111,7 +111,29 @@ sequenceDiagram
 
 > 如果你的业务已经明确本次订单要走某一个支付品牌，建议直接传该品牌对应的 `allowedChannels`，让平台直接进入最终支付动作，而不是先展示一个无意义的品牌选择页。
 
-### 2.4 基础地址
+### 2.4 allowedChannels 取值说明
+
+`allowedChannels` 表示“这笔订单允许平台在什么支付范围内完成支付”。`merchant-quickstart` 里的 `OPENCASHIER_ALLOWED_CHANNELS` 只是把同一组值按逗号分隔写进 `.env`，然后在创建订单时透传给订单接口的 `allowedChannels`。
+
+| 渠道编码 | 适用场景 | 当前说明 |
+| --- | --- | --- |
+| `alipay_qr` | PC 收银台展示二维码，由用户使用支付宝扫码支付 | 支付宝能力已可用 |
+| `alipay_page` | PC 浏览器直接跳转支付宝电脑网站支付 | Quickstart 默认值；最适合只启动 API 和 quickstart 两个进程的接入路径 |
+| `alipay_wap` | 手机浏览器跳转支付宝手机网站支付 | 支付宝能力已可用 |
+| `wechat_qr` | PC 场景展示微信支付二维码 | 微信支付仍在测试中 |
+| `wechat_jsapi` | 微信内 WebView 或公众号场景 | 微信支付仍在测试中，仅适合微信内环境 |
+| `stripe_checkout` | 直接跳转 Stripe Hosted Checkout | Stripe 能力已可用 |
+| `paypal_checkout` | 未来 PayPal Checkout 场景 | 预留渠道编码，暂未开放真实交易 |
+
+推荐写法：
+
+- 支付宝品牌路由：`["alipay_qr", "alipay_page", "alipay_wap"]`
+- quickstart 默认直跳：`["alipay_page"]`
+- Stripe 单渠道：`["stripe_checkout"]`
+
+如果你已经明确要把用户直接带到某一个最终支付入口，优先传单个渠道值；如果你希望平台按终端能力在同一支付品牌内自动选择最终动作，再传该品牌对应的整组渠道。
+
+### 2.5 基础地址
 
 - API 根地址：`{your-host}/api/v1`
 - Swagger：`{your-host}/api/docs`
@@ -781,3 +803,100 @@ success
 6. 需要退款时接入 `POST /api/v1/refunds`
 
 对于绝大多数业务场景，这条路径已经足够完成首版接入。
+
+如果你想直接运行一份商户侧参考实现，可以使用仓库里的 [merchant-quickstart](https://github.com/aaaaaajie/OpenCashier/tree/main/examples/merchant-quickstart)。它把签名、下单、跳转、通知验签和结果页查单压缩在一个小应用里。
+
+### 9.1 先跑 example
+
+```bash
+pnpm install
+pnpm dev:api
+pnpm dev:merchant-quickstart
+```
+
+然后打开 `http://127.0.0.1:4100`。完整说明见 [examples/merchant-quickstart/README.zh-CN.md](https://github.com/aaaaaajie/OpenCashier/blob/main/examples/merchant-quickstart/README.zh-CN.md)。
+
+### 9.2 对照签名和下单代码
+
+下面这段来自 `merchant-quickstart` 的 `src/signing.ts` 和 `src/opencashier-client.ts`。它对应本文第 4 节和第 5.1 节：先按平台规则构造签名串，再带着签名去调用创建订单接口。
+
+```ts
+const timestamp = Date.now().toString();
+const nonce = createNonce();
+const signingContent = buildMerchantRequestSigningContent({
+  method: "POST",
+  path: "/api/v1/orders",
+  appId: this.appId,
+  timestamp,
+  nonce,
+  body: input
+});
+const signature = signMerchantRequest(this.appSecret, signingContent);
+
+const response = await fetch(`${this.apiBaseUrl}/orders`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "X-App-Id": this.appId,
+    "X-Timestamp": timestamp,
+    "X-Nonce": nonce,
+    "X-Sign-Type": "HMAC-SHA256",
+    "X-Sign": signature,
+    "Idempotency-Key": `order:${input.merchantOrderNo}:create`
+  },
+  body: stableStringify(input)
+});
+```
+
+### 9.3 对照跳转到 `cashierUrl`
+
+`merchant-quickstart` 的服务端下单后，会先保存本地快照，再把浏览器直接带到平台返回的 `cashierUrl`：
+
+```ts
+const created = await opencashier.createOrder(createOrderInput);
+
+store.recordCreatedOrder({
+  merchantOrderNo,
+  platformOrderNo: created.platformOrderNo,
+  amount: createOrderInput.amount,
+  currency: createOrderInput.currency,
+  subject: createOrderInput.subject,
+  status: created.status,
+  cashierUrl: created.cashierUrl,
+  notifyUrl: createOrderInput.notifyUrl,
+  returnUrl
+});
+
+redirect(response, created.cashierUrl);
+```
+
+### 9.4 对照通知验签和查单兜底
+
+通知处理对应本文第 6 节；结果页查单兜底对应本文第 5.3 节。`merchant-quickstart` 用同一份 `appSecret` 完成通知验签，再把通知结果写入本地订单状态。
+
+```ts
+if (
+  !verifyPlatformNotify({
+    headers: request.headers,
+    rawBody,
+    appSecret: config.appSecret
+  })
+) {
+  response.writeHead(401);
+  response.end("invalid signature");
+  return;
+}
+
+const payload = JSON.parse(rawBody);
+store.recordNotify({
+  notifyId: payload.notifyId,
+  eventType: payload.eventType,
+  platformOrderNo: payload.platformOrderNo,
+  merchantOrderNo: payload.merchantOrderNo,
+  status: payload.status,
+  channel: payload.channel
+});
+
+const queriedOrder = await opencashier.getOrderByMerchantOrderNo(merchantOrderNo);
+store.recordQueryResult(queriedOrder);
+```
