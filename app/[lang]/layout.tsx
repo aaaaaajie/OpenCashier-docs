@@ -1,5 +1,4 @@
 import { Footer, Layout, Navbar } from 'nextra-theme-docs'
-import { Head } from 'nextra/components'
 import { getPageMap } from 'nextra/page-map'
 import 'nextra-theme-docs/style.css'
 import LocaleHomeSwitch from '../components/locale-home-switch'
@@ -30,7 +29,6 @@ export default async function LangLayout({
 
   return (
     <>
-      <Head />
       <Layout
         navbar={navbar}
         footer={footer}
