@@ -106,8 +106,6 @@ sequenceDiagram
 | --- | --- | --- | --- |
 | 支付宝 | `["alipay_qr", "alipay_page", "alipay_wap"]` | 可用 | 已支持真实下单、查单、关单、退款和回调验签 |
 | Stripe | `["stripe_checkout"]` | 可用 | 已支持 Hosted Checkout、查单、会话失效或关单、退款和 webhook 验签；当前仅开放 `card` |
-| 微信支付 | `["wechat_qr", "wechat_jsapi"]` | 测试中 | 当前主要为直连 API 预留和骨架能力 |
-| PayPal | `["paypal_checkout"]` | 暂未开放 | 当前保留渠道编码和集成位，真实交易链路尚未完成 |
 
 > 如果你的业务已经明确本次订单要走某一个支付品牌，建议直接传该品牌对应的 `allowedChannels`，让平台直接进入最终支付动作，而不是先展示一个无意义的品牌选择页。
 
@@ -122,10 +120,7 @@ sequenceDiagram
 | `alipay_qr` | PC 收银台展示二维码，由用户使用支付宝扫码支付 | 支付宝能力已可用 |
 | `alipay_page` | PC 浏览器直接跳转支付宝电脑网站支付 | Quickstart 默认值；最适合只启动 API 和 quickstart 两个进程的接入路径 |
 | `alipay_wap` | 手机浏览器跳转支付宝手机网站支付 | 支付宝能力已可用 |
-| `wechat_qr` | PC 场景展示微信支付二维码 | 微信支付仍在测试中 |
-| `wechat_jsapi` | 微信内 WebView 或公众号场景 | 微信支付仍在测试中，仅适合微信内环境 |
 | `stripe_checkout` | 直接跳转 Stripe Hosted Checkout | Stripe 能力已可用 |
-| `paypal_checkout` | 未来 PayPal Checkout 场景 | 预留渠道编码，暂未开放真实交易 |
 
 推荐写法：
 
@@ -237,7 +232,97 @@ demo_app
 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 ```
 
-### 4.2 Node.js 签名示例
+### 4.2 Node.js SDK 示例
+
+推荐直接使用官方 Node/TypeScript SDK：
+
+```bash
+pnpm add @opencashier/sdk
+```
+
+```ts
+import { OpenCashierClient } from "@opencashier/sdk";
+
+const client = new OpenCashierClient({
+  baseUrl: "https://pay.example.com/api/v1",
+  appId: process.env.OPENCASHIER_APP_ID!,
+  appSecret: process.env.OPENCASHIER_APP_SECRET!
+});
+
+const order = await client.orders.create({
+  merchantOrderNo: "ORDER_202603130001",
+  amount: 9900,
+  currency: "CNY",
+  subject: "VIP会员",
+  description: "年费会员",
+  notifyUrl: "https://merchant.example.com/pay/notify",
+  returnUrl: "https://merchant.example.com/pay/result",
+  allowedChannels: ["alipay_page"]
+});
+
+console.log(order.platformOrderNo);
+console.log(order.cashierUrl);
+```
+
+SDK 默认会处理：
+
+- 请求签名
+- `X-App-Id / X-Timestamp / X-Nonce / X-Sign-Type / X-Sign` 注入
+- 写接口的 `Idempotency-Key` 默认值
+- 平台统一响应和错误解析
+
+如果你也想在同一个 SDK 里顺手写入 app-scoped provider config，可以继续加上 admin 凭据，然后调用 `client.providers.setup()`：
+
+```ts
+import { OpenCashierClient } from "@opencashier/sdk";
+
+const client = new OpenCashierClient({
+  baseUrl: "https://pay.example.com/api/v1",
+  appId: process.env.OPENCASHIER_APP_ID!,
+  appSecret: process.env.OPENCASHIER_APP_SECRET!,
+  admin: {
+    username: process.env.OPENCASHIER_ADMIN_USERNAME!,
+    password: process.env.OPENCASHIER_ADMIN_PASSWORD!
+  }
+});
+
+await client.providers.setup({
+  alipay: {
+    authMode: "KEY",
+    appId: process.env.ALIPAY_APP_ID!,
+    privateKey: process.env.ALIPAY_PRIVATE_KEY!,
+    publicKey: process.env.ALIPAY_PUBLIC_KEY!,
+    gateway: process.env.ALIPAY_GATEWAY!,
+    productCapabilities: ["PAGE"]
+  }
+});
+```
+
+如果你希望在初始化阶段就一并完成 provider setup，也可以使用异步工厂：
+
+```ts
+const client = await OpenCashierClient.create({
+  baseUrl: "https://pay.example.com/api/v1",
+  appId: process.env.OPENCASHIER_APP_ID!,
+  appSecret: process.env.OPENCASHIER_APP_SECRET!,
+  admin: {
+    username: process.env.OPENCASHIER_ADMIN_USERNAME!,
+    password: process.env.OPENCASHIER_ADMIN_PASSWORD!
+  },
+  providers: {
+    alipay: {
+      authMode: "KEY",
+      appId: process.env.ALIPAY_APP_ID!,
+      privateKey: process.env.ALIPAY_PRIVATE_KEY!,
+      publicKey: process.env.ALIPAY_PUBLIC_KEY!,
+      gateway: process.env.ALIPAY_GATEWAY!,
+      productCapabilities: ["PAGE"]
+    }
+  }
+});
+```
+
+如果你暂时不引入 SDK，也可以自己实现签名逻辑：
 
 ```js
 import { createHash, createHmac } from "node:crypto";
@@ -358,9 +443,7 @@ export function signMerchantRequest({ method, path, appId, timestamp, nonce, bod
 | 业务支付意图 | 推荐 `allowedChannels` | 平台期望行为 |
 | --- | --- | --- |
 | 支付宝 | `["alipay_qr", "alipay_page", "alipay_wap"]` | 根据终端和后台能力直接展示二维码或自动跳转 |
-| 微信支付 | `["wechat_qr", "wechat_jsapi"]` | 根据终端和能力选择最终形态 |
 | Stripe | `["stripe_checkout"]` | 直接跳转到 Stripe Checkout |
-| PayPal | `["paypal_checkout"]` | 未来直接跳转到 PayPal Checkout |
 
 如果业务已经明确只允许某一种具体支付形态，也可以传更窄的集合，例如：
 
@@ -670,7 +753,44 @@ hex(HMAC_SHA256(appSecret, signingContent))
 }
 ```
 
-### 6.5 Node.js 验签示例
+### 6.5 Node.js SDK 验签示例
+
+```ts
+import {
+  OpenCashierClient,
+  OpenCashierSignatureError
+} from "@opencashier/sdk";
+
+const client = new OpenCashierClient({
+  baseUrl: "https://pay.example.com/api/v1",
+  appId: process.env.OPENCASHIER_APP_ID!,
+  appSecret: process.env.OPENCASHIER_APP_SECRET!
+});
+
+export async function handleNotify(req, res, rawBody) {
+  try {
+    const event = client.notifications.verify({
+      headers: req.headers,
+      rawBody
+    });
+
+    console.log(event.eventType, event.platformOrderNo);
+
+    res.statusCode = 200;
+    res.end("success");
+  } catch (error) {
+    if (error instanceof OpenCashierSignatureError) {
+      res.statusCode = 401;
+      res.end("invalid signature");
+      return;
+    }
+
+    throw error;
+  }
+}
+```
+
+如果你暂时不引入 SDK，也可以自己实现验签逻辑：
 
 ```js
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
@@ -806,13 +926,17 @@ success
 
 对于绝大多数业务场景，这条路径已经足够完成首版接入。
 
-如果你想直接运行一份商户侧参考实现，可以使用仓库里的 [merchant-quickstart](https://github.com/aaaaaajie/OpenCashier/tree/main/examples/merchant-quickstart)。它把签名、下单、跳转、通知验签和结果页查单压缩在一个小应用里。
+如果你想直接运行一份商户侧参考实现，可以使用仓库里的 [merchant-quickstart](https://github.com/aaaaaajie/OpenCashier/tree/main/examples/merchant-quickstart)。它把 SDK 下单、跳转、通知验签和结果页查单压缩在一个小应用里。
 
 ### 9.1 先跑 example
 
-如果你的本地数据库是全新的，先启动一次 `pnpm dev:web`，打开 `http://localhost:5173/settings`，配置并激活至少一个支付渠道。`ENABLE_DEMO_DATA=1` 只会生成 `demo_app` 这样的商户应用，不会自动写入支付宝或 Stripe 的第三方密钥。
+如果你的本地数据库是全新的，只需要准备：
 
-默认 example 使用 `alipay_page`，因此至少需要准备好支付宝配置；如果你把 `OPENCASHIER_ALLOWED_CHANNELS` 改成 `stripe_checkout`，则需要先准备好 Stripe 配置。
+- API 根目录 `.env` 中开启 `ENABLE_DEMO_DATA=1`
+- API 根目录里可用的 `ADMIN_USERNAME` / `ADMIN_PASSWORD`
+- `examples/merchant-quickstart/.env` 或 `provider-config.local.json` 中的渠道配置
+
+当前 quickstart 会在 HTTP 服务启动前通过 admin API 把 app-scoped 渠道配置写进去，所以默认的 `alipay_page` 路径不再要求先启动 `pnpm dev:web`。
 
 ```bash
 pnpm install
@@ -822,35 +946,30 @@ pnpm dev:merchant-quickstart
 
 然后打开 `http://127.0.0.1:4100`。完整说明见 [examples/merchant-quickstart/README.zh-CN.md](https://github.com/aaaaaajie/OpenCashier/blob/main/examples/merchant-quickstart/README.zh-CN.md)。
 
-### 9.2 对照签名和下单代码
+### 9.2 对照 SDK 下单代码
 
-下面这段来自 `merchant-quickstart` 的 `src/signing.ts` 和 `src/opencashier-client.ts`。它对应本文第 4 节和第 5.1 节：先按平台规则构造签名串，再带着签名去调用创建订单接口。
+下面这段来自 `merchant-quickstart` 的 `src/server.ts`。它对应本文第 4 节和第 5.1 节：先初始化一份 `OpenCashierClient`，再只带业务参数调用 `orders.create()`。
 
 ```ts
-const timestamp = Date.now().toString();
-const nonce = createNonce();
-const signingContent = buildMerchantRequestSigningContent({
-  method: "POST",
-  path: "/api/v1/orders",
-  appId: this.appId,
-  timestamp,
-  nonce,
-  body: input
+const opencashier = new OpenCashierClient({
+  baseUrl: config.apiBaseUrl,
+  appId: config.appId,
+  appSecret: config.appSecret
 });
-const signature = signMerchantRequest(this.appSecret, signingContent);
 
-const response = await fetch(`${this.apiBaseUrl}/orders`, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    "X-App-Id": this.appId,
-    "X-Timestamp": timestamp,
-    "X-Nonce": nonce,
-    "X-Sign-Type": "HMAC-SHA256",
-    "X-Sign": signature,
-    "Idempotency-Key": `order:${input.merchantOrderNo}:create`
-  },
-  body: stableStringify(input)
+const created = await opencashier.orders.create({
+  merchantOrderNo,
+  amount: 1,
+  currency: "CNY",
+  subject: "OpenCashier Quickstart Order",
+  description: "Minimal merchant integration reference flow",
+  notifyUrl: config.notifyUrl,
+  returnUrl,
+  expireInSeconds: 900,
+  allowedChannels: config.allowedChannels,
+  metadata: {
+    source: "merchant-quickstart"
+  }
 });
 ```
 
@@ -859,7 +978,7 @@ const response = await fetch(`${this.apiBaseUrl}/orders`, {
 `merchant-quickstart` 的服务端下单后，会先保存本地快照，再把浏览器直接带到平台返回的 `cashierUrl`：
 
 ```ts
-const created = await opencashier.createOrder(createOrderInput);
+const created = await opencashier.orders.create(createOrderInput);
 
 store.recordCreatedOrder({
   merchantOrderNo,
@@ -878,22 +997,14 @@ redirect(response, created.cashierUrl);
 
 ### 9.4 对照通知验签和查单兜底
 
-通知处理对应本文第 6 节；结果页查单兜底对应本文第 5.3 节。`merchant-quickstart` 用同一份 `appSecret` 完成通知验签，再把通知结果写入本地订单状态。
+通知处理对应本文第 6 节；结果页查单兜底对应本文第 5.3 节。`merchant-quickstart` 通过 `client.notifications.verify()` 完成通知验签，再把通知结果写入本地订单状态，并在结果页再次查单。
 
 ```ts
-if (
-  !verifyPlatformNotify({
-    headers: request.headers,
-    rawBody,
-    appSecret: config.appSecret
-  })
-) {
-  response.writeHead(401);
-  response.end("invalid signature");
-  return;
-}
+const payload = opencashier.notifications.verify({
+  headers: request.headers,
+  rawBody
+});
 
-const payload = JSON.parse(rawBody);
 store.recordNotify({
   notifyId: payload.notifyId,
   eventType: payload.eventType,
@@ -903,6 +1014,8 @@ store.recordNotify({
   channel: payload.channel
 });
 
-const queriedOrder = await opencashier.getOrderByMerchantOrderNo(merchantOrderNo);
+const queriedOrder = await opencashier.orders.getByMerchantOrderNo(
+  merchantOrderNo
+);
 store.recordQueryResult(queriedOrder);
 ```

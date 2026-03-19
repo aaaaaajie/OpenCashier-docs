@@ -6,6 +6,31 @@ This page documents `allowedChannels`, app-scoped provider config APIs, and prov
 
 `examples/merchant-quickstart` can write provider config into the merchant app scope on the first page load or before the first checkout, using the admin API.
 
+Under the hood, quickstart now does that through the official SDK:
+
+```ts
+const client = new OpenCashierClient({
+  baseUrl: "http://127.0.0.1:3000/api/v1",
+  appId: "demo_app",
+  appSecret: "demo_app_secret",
+  admin: {
+    username: process.env.OPENCASHIER_ADMIN_USERNAME!,
+    password: process.env.OPENCASHIER_ADMIN_PASSWORD!
+  }
+});
+
+await client.providers.setup({
+  alipay: {
+    authMode: "KEY",
+    appId: process.env.ALIPAY_APP_ID!,
+    privateKey: process.env.ALIPAY_PRIVATE_KEY!,
+    publicKey: process.env.ALIPAY_PUBLIC_KEY!,
+    gateway: process.env.ALIPAY_GATEWAY!,
+    productCapabilities: ["PAGE"]
+  }
+});
+```
+
 Default call sequence:
 
 1. `PUT /api/v1/admin/merchants/:appId/platform-configs`
@@ -50,10 +75,7 @@ Notes:
 | `alipay_qr` | Alipay | `alipay` | Desktop QR cashier flow |
 | `alipay_page` | Alipay | `alipay` | Desktop browser redirect to Alipay web payment |
 | `alipay_wap` | Alipay | `alipay` | Mobile browser redirect to Alipay mobile web payment |
-| `wechat_qr` | WeChat Pay | `wechatpay` | Desktop WeChat QR flow |
-| `wechat_jsapi` | WeChat Pay | `wechatpay` | In-WeChat JSAPI flow |
 | `stripe_checkout` | Stripe | `stripe` | Direct redirect to Stripe Hosted Checkout |
-| `paypal_checkout` | PayPal | `paypal` | Reserved PayPal integration slot |
 
 Recommendations:
 
@@ -83,25 +105,3 @@ Recommendations:
 | `STRIPE_WEBHOOK_SECRET` | Webhook Signing Secret | Always required |
 
 If you use app-scoped Stripe config, point the Stripe dashboard webhook URL to an app-specific path such as `/api/v1/notify/stripe/demo_app`.
-
-## WeChat Pay
-
-| Field | Meaning | Required when |
-| --- | --- | --- |
-| `WECHATPAY_VERIFY_MODE` | Verification mode, `PUBLIC_KEY` or `CERT` | Recommended to set explicitly |
-| `WECHATPAY_APP_ID` | Official account, mini-program, or open-platform AppId | Always required |
-| `WECHATPAY_MCH_ID` | WeChat Pay merchant ID | Always required |
-| `WECHATPAY_MCH_SERIAL_NO` | Merchant API certificate serial number | Always required |
-| `WECHATPAY_API_V3_KEY` | API v3 key | Always required |
-| `WECHATPAY_PRIVATE_KEY` | Merchant private key, either inline content or a file path | Always required |
-| `WECHATPAY_PUBLIC_KEY_ID` | WeChat Pay public key ID | Required in `PUBLIC_KEY` mode |
-| `WECHATPAY_PUBLIC_KEY` | WeChat Pay public key | Required in `PUBLIC_KEY` mode |
-| `WECHATPAY_PLATFORM_CERT_SERIAL_NO` | Platform certificate serial number | Required in `CERT` mode |
-| `WECHATPAY_PLATFORM_CERT` | WeChat Pay platform certificate | Required in `CERT` mode |
-
-## PayPal
-
-| Field | Meaning | Required when |
-| --- | --- | --- |
-| `PAYPAL_CLIENT_ID` | PayPal Client ID | Currently reserved |
-| `PAYPAL_CLIENT_SECRET` | PayPal Client Secret | Currently reserved |

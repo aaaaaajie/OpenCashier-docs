@@ -106,8 +106,6 @@ At minimum, merchants must provide:
 | --- | --- | --- | --- |
 | Alipay | `["alipay_qr", "alipay_page", "alipay_wap"]` | Available | Real create/query/close/refund and webhook verification supported |
 | Stripe | `["stripe_checkout"]` | Available | Hosted Checkout, query, session expire/close, refund, webhook verification; card only |
-| WeChat Pay | `["wechat_qr", "wechat_jsapi"]` | Testing | API direct integration scaffolded |
-| PayPal | `["paypal_checkout"]` | Not yet available | Reserved channel code; real flow not finished |
 
 > If the order must use a specific brand, pass the corresponding `allowedChannels` so the platform can jump directly to the final action instead of showing an unnecessary brand selection page.
 
@@ -122,10 +120,7 @@ If you also need the app-scoped provider config APIs, the quickstart bootstrap p
 | `alipay_qr` | Show an Alipay QR code on a desktop cashier page | Alipay support is available |
 | `alipay_page` | Redirect a desktop browser to Alipay web payment | Quickstart default; best fit for the two-process API + quickstart path |
 | `alipay_wap` | Redirect a mobile browser to Alipay mobile web payment | Alipay support is available |
-| `wechat_qr` | Show a WeChat Pay QR code in desktop scenarios | WeChat Pay is still in testing |
-| `wechat_jsapi` | WeChat in-app WebView or official account scenarios | WeChat Pay is still in testing; only use inside WeChat |
 | `stripe_checkout` | Redirect directly to Stripe Hosted Checkout | Stripe support is available |
-| `paypal_checkout` | Future PayPal Checkout scenarios | Reserved code; real transactions are not open yet |
 
 Recommended values:
 
@@ -235,7 +230,97 @@ demo_app
 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 ```
 
-### 4.2 Node.js signing example
+### 4.2 Node.js SDK example
+
+Recommended path: use the official Node/TypeScript SDK directly.
+
+```bash
+pnpm add @opencashier/sdk
+```
+
+```ts
+import { OpenCashierClient } from "@opencashier/sdk";
+
+const client = new OpenCashierClient({
+  baseUrl: "https://pay.example.com/api/v1",
+  appId: process.env.OPENCASHIER_APP_ID!,
+  appSecret: process.env.OPENCASHIER_APP_SECRET!
+});
+
+const order = await client.orders.create({
+  merchantOrderNo: "ORDER_202603130001",
+  amount: 9900,
+  currency: "CNY",
+  subject: "VIP Membership",
+  description: "Annual membership",
+  notifyUrl: "https://merchant.example.com/pay/notify",
+  returnUrl: "https://merchant.example.com/pay/result",
+  allowedChannels: ["alipay_page"]
+});
+
+console.log(order.platformOrderNo);
+console.log(order.cashierUrl);
+```
+
+The SDK handles:
+
+- request signing
+- `X-App-Id / X-Timestamp / X-Nonce / X-Sign-Type / X-Sign`
+- default `Idempotency-Key` injection for write APIs
+- envelope parsing and error normalization
+
+If you also want to write app-scoped provider config from the same SDK package, add admin credentials and call `client.providers.setup()`:
+
+```ts
+import { OpenCashierClient } from "@opencashier/sdk";
+
+const client = new OpenCashierClient({
+  baseUrl: "https://pay.example.com/api/v1",
+  appId: process.env.OPENCASHIER_APP_ID!,
+  appSecret: process.env.OPENCASHIER_APP_SECRET!,
+  admin: {
+    username: process.env.OPENCASHIER_ADMIN_USERNAME!,
+    password: process.env.OPENCASHIER_ADMIN_PASSWORD!
+  }
+});
+
+await client.providers.setup({
+  alipay: {
+    authMode: "KEY",
+    appId: process.env.ALIPAY_APP_ID!,
+    privateKey: process.env.ALIPAY_PRIVATE_KEY!,
+    publicKey: process.env.ALIPAY_PUBLIC_KEY!,
+    gateway: process.env.ALIPAY_GATEWAY!,
+    productCapabilities: ["PAGE"]
+  }
+});
+```
+
+If you want to complete provider setup during client initialization, use the async factory:
+
+```ts
+const client = await OpenCashierClient.create({
+  baseUrl: "https://pay.example.com/api/v1",
+  appId: process.env.OPENCASHIER_APP_ID!,
+  appSecret: process.env.OPENCASHIER_APP_SECRET!,
+  admin: {
+    username: process.env.OPENCASHIER_ADMIN_USERNAME!,
+    password: process.env.OPENCASHIER_ADMIN_PASSWORD!
+  },
+  providers: {
+    alipay: {
+      authMode: "KEY",
+      appId: process.env.ALIPAY_APP_ID!,
+      privateKey: process.env.ALIPAY_PRIVATE_KEY!,
+      publicKey: process.env.ALIPAY_PUBLIC_KEY!,
+      gateway: process.env.ALIPAY_GATEWAY!,
+      productCapabilities: ["PAGE"]
+    }
+  }
+});
+```
+
+If you do not want to use the SDK yet, you can still implement signing manually:
 
 ```js
 import { createHash, createHmac } from "node:crypto";
@@ -356,9 +441,7 @@ Notes:
 | Payment intent | Recommended `allowedChannels` | Platform behavior |
 | --- | --- | --- |
 | Alipay | `["alipay_qr", "alipay_page", "alipay_wap"]` | Show QR or redirect based on device/back-end capability |
-| WeChat Pay | `["wechat_qr", "wechat_jsapi"]` | Choose final format based on device and capability |
 | Stripe | `["stripe_checkout"]` | Redirect to Stripe Checkout |
-| PayPal | `["paypal_checkout"]` | Redirect to PayPal Checkout (future) |
 
 If your use case only allows a specific channel, you can pass a narrower list, e.g.:
 
@@ -668,7 +751,44 @@ Refund success:
 }
 ```
 
-### 6.5 Node.js verification example
+### 6.5 Node.js SDK verification example
+
+```ts
+import {
+  OpenCashierClient,
+  OpenCashierSignatureError
+} from "@opencashier/sdk";
+
+const client = new OpenCashierClient({
+  baseUrl: "https://pay.example.com/api/v1",
+  appId: process.env.OPENCASHIER_APP_ID!,
+  appSecret: process.env.OPENCASHIER_APP_SECRET!
+});
+
+export async function handleNotify(req, res, rawBody) {
+  try {
+    const event = client.notifications.verify({
+      headers: req.headers,
+      rawBody
+    });
+
+    console.log(event.eventType, event.platformOrderNo);
+
+    res.statusCode = 200;
+    res.end("success");
+  } catch (error) {
+    if (error instanceof OpenCashierSignatureError) {
+      res.statusCode = 401;
+      res.end("invalid signature");
+      return;
+    }
+
+    throw error;
+  }
+}
+```
+
+If you do not want to use the SDK yet, you can still verify notifications manually:
 
 ```js
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
@@ -804,13 +924,17 @@ If you want the minimal integration path, follow:
 
 For most cases, this is sufficient for the first integration.
 
-If you want a runnable merchant-side reference, use [merchant-quickstart](https://github.com/aaaaaajie/OpenCashier/tree/main/examples/merchant-quickstart) from the repo. It keeps signing, create order, redirect, notification verification, and result-page query fallback in one small app.
+If you want a runnable merchant-side reference, use [merchant-quickstart](https://github.com/aaaaaajie/OpenCashier/tree/main/examples/merchant-quickstart) from the repo. It keeps the SDK create-order path, redirect, notification verification, and result-page query fallback in one small app.
 
 ### 9.1 Run the example first
 
-If your local database is fresh, start `pnpm dev:web` once, open `http://localhost:5173/settings`, and activate at least one provider first. `ENABLE_DEMO_DATA=1` only seeds merchant apps such as `demo_app`; it does not seed Alipay or Stripe provider secrets.
+If your local database is fresh, you only need:
 
-The default example uses `alipay_page`, so you need a working Alipay config first. If you switch `OPENCASHIER_ALLOWED_CHANNELS` to `stripe_checkout`, configure Stripe first instead.
+- `ENABLE_DEMO_DATA=1` in the API root `.env`
+- matching `ADMIN_USERNAME` / `ADMIN_PASSWORD`
+- provider fields in `examples/merchant-quickstart/.env` or `provider-config.local.json`
+
+The current quickstart writes app-scoped provider config through the admin API before the HTTP server starts, so the default `alipay_page` path does not require `pnpm dev:web`.
 
 ```bash
 pnpm install
@@ -820,35 +944,30 @@ pnpm dev:merchant-quickstart
 
 Then open `http://127.0.0.1:4100`. Full setup notes are in [examples/merchant-quickstart/README.md](https://github.com/aaaaaajie/OpenCashier/blob/main/examples/merchant-quickstart/README.md).
 
-### 9.2 Compare the signing and create-order code
+### 9.2 Compare the SDK create-order code
 
-The snippet below is taken from `merchant-quickstart` `src/signing.ts` and `src/opencashier-client.ts`. It maps directly to section 4 and section 5.1 in this guide: build the signing content first, then call create order with the signed headers.
+The snippet below is taken from `merchant-quickstart` `src/server.ts`. It maps directly to section 4 and section 5.1 in this guide: create one `OpenCashierClient`, then call `orders.create()` with business input only.
 
 ```ts
-const timestamp = Date.now().toString();
-const nonce = createNonce();
-const signingContent = buildMerchantRequestSigningContent({
-  method: "POST",
-  path: "/api/v1/orders",
-  appId: this.appId,
-  timestamp,
-  nonce,
-  body: input
+const opencashier = new OpenCashierClient({
+  baseUrl: config.apiBaseUrl,
+  appId: config.appId,
+  appSecret: config.appSecret
 });
-const signature = signMerchantRequest(this.appSecret, signingContent);
 
-const response = await fetch(`${this.apiBaseUrl}/orders`, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    "X-App-Id": this.appId,
-    "X-Timestamp": timestamp,
-    "X-Nonce": nonce,
-    "X-Sign-Type": "HMAC-SHA256",
-    "X-Sign": signature,
-    "Idempotency-Key": `order:${input.merchantOrderNo}:create`
-  },
-  body: stableStringify(input)
+const created = await opencashier.orders.create({
+  merchantOrderNo,
+  amount: 1,
+  currency: "CNY",
+  subject: "OpenCashier Quickstart Order",
+  description: "Minimal merchant integration reference flow",
+  notifyUrl: config.notifyUrl,
+  returnUrl,
+  expireInSeconds: 900,
+  allowedChannels: config.allowedChannels,
+  metadata: {
+    source: "merchant-quickstart"
+  }
 });
 ```
 
@@ -857,7 +976,7 @@ const response = await fetch(`${this.apiBaseUrl}/orders`, {
 After create order, `merchant-quickstart` stores a local snapshot and sends the browser straight to the platform `cashierUrl`:
 
 ```ts
-const created = await opencashier.createOrder(createOrderInput);
+const created = await opencashier.orders.create(createOrderInput);
 
 store.recordCreatedOrder({
   merchantOrderNo,
@@ -876,22 +995,14 @@ redirect(response, created.cashierUrl);
 
 ### 9.4 Compare notification verification and query fallback
 
-Notification handling maps to section 6. Result-page query fallback maps to section 5.3. `merchant-quickstart` verifies notifications with the same `appSecret`, writes the notify payload into local order state, and also queries the order again on the result page.
+Notification handling maps to section 6. Result-page query fallback maps to section 5.3. `merchant-quickstart` verifies notifications through `client.notifications.verify()`, writes the notify payload into local order state, and also queries the order again on the result page.
 
 ```ts
-if (
-  !verifyPlatformNotify({
-    headers: request.headers,
-    rawBody,
-    appSecret: config.appSecret
-  })
-) {
-  response.writeHead(401);
-  response.end("invalid signature");
-  return;
-}
+const payload = opencashier.notifications.verify({
+  headers: request.headers,
+  rawBody
+});
 
-const payload = JSON.parse(rawBody);
 store.recordNotify({
   notifyId: payload.notifyId,
   eventType: payload.eventType,
@@ -901,6 +1012,8 @@ store.recordNotify({
   channel: payload.channel
 });
 
-const queriedOrder = await opencashier.getOrderByMerchantOrderNo(merchantOrderNo);
+const queriedOrder = await opencashier.orders.getByMerchantOrderNo(
+  merchantOrderNo
+);
 store.recordQueryResult(queriedOrder);
 ```
