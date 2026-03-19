@@ -1,0 +1,107 @@
+# Provider Config Reference
+
+This page documents `allowedChannels`, app-scoped provider config APIs, and provider-specific config fields in OpenCashier.
+
+## Merchant Quickstart
+
+`examples/merchant-quickstart` can write provider config into the merchant app scope on the first page load or before the first checkout, using the admin API.
+
+Default call sequence:
+
+1. `PUT /api/v1/admin/merchants/:appId/platform-configs`
+2. `POST /api/v1/admin/merchants/:appId/platform-configs/:configKey/validate`
+3. `POST /api/v1/admin/merchants/:appId/platform-configs/:configKey/activate`
+
+The default example uses:
+
+- `appId=demo_app`
+- `allowedChannels=["alipay_page"]`
+- `groupKey=alipay`
+
+Because of that, the default quickstart path does not require `apps/web`. You only need the web app if you switch to QR-based channels or prefer managing config manually in the UI.
+
+quickstart tries `validate` first. If the online probe itself fails but the API can still accept the config, quickstart still activates the draft and shows the probe error in the home-page status card. That behavior is only for the local quickstart path; production operator flows should still check validation results explicitly.
+
+## App-scoped Provider Config APIs
+
+These APIs match the admin “System Settings” capability 1:1, but the scope is limited to one merchant app:
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/v1/admin/merchants/:appId/platform-configs` | List draft and active config rows in the current merchant app scope |
+| `PUT` | `/api/v1/admin/merchants/:appId/platform-configs` | Save one config group as draft |
+| `POST` | `/api/v1/admin/merchants/:appId/platform-configs/:configKey/validate` | Validate a draft or the current config |
+| `POST` | `/api/v1/admin/merchants/:appId/platform-configs/:configKey/activate` | Activate the draft |
+| `DELETE` | `/api/v1/admin/merchants/:appId/platform-configs/:configKey` | Delete this config group from the current merchant app scope |
+
+Notes:
+
+- `appId` is the merchant app `appId`, not a database UUID.
+- At runtime, OpenCashier prefers the active config inside the merchant app scope.
+- If a config group does not exist in the merchant app scope, runtime falls back to the global active config.
+- If you prefer the UI, you can still manage global config at `http://localhost:5173/settings`.
+
+## allowedChannels And Provider Groups
+
+`allowedChannels` defines the payment scope OpenCashier can use to finish this order. Its relationship with provider config groups is:
+
+| `allowedChannels` value | Provider | Config group | Notes |
+| --- | --- | --- | --- |
+| `alipay_qr` | Alipay | `alipay` | Desktop QR cashier flow |
+| `alipay_page` | Alipay | `alipay` | Desktop browser redirect to Alipay web payment |
+| `alipay_wap` | Alipay | `alipay` | Mobile browser redirect to Alipay mobile web payment |
+| `wechat_qr` | WeChat Pay | `wechatpay` | Desktop WeChat QR flow |
+| `wechat_jsapi` | WeChat Pay | `wechatpay` | In-WeChat JSAPI flow |
+| `stripe_checkout` | Stripe | `stripe` | Direct redirect to Stripe Hosted Checkout |
+| `paypal_checkout` | PayPal | `paypal` | Reserved PayPal integration slot |
+
+Recommendations:
+
+- If you already know the exact final payment entry, prefer a single `allowedChannels` value.
+- If you want OpenCashier to choose the final action inside one payment brand based on device and capability, pass the full set for that brand.
+- `allowedChannels` controls order routing. Provider config groups control which credentials and parameters OpenCashier uses for that provider.
+
+## Alipay
+
+| Field | Meaning | Required when |
+| --- | --- | --- |
+| `ALIPAY_AUTH_MODE` | Alipay integration mode, `KEY` or `CERT` | Recommended to set explicitly |
+| `ALIPAY_PRODUCT_CAPABILITIES` | Enabled Alipay product capabilities for this app, using `QR`, `PAGE`, `WAP` | Recommended when the hosted cashier auto-routes inside Alipay |
+| `ALIPAY_APP_ID` | Alipay application ID | Always required |
+| `ALIPAY_PRIVATE_KEY` | Application private key, either PEM content or a server-local file path | Always required |
+| `ALIPAY_PUBLIC_KEY` | Alipay public key for response and webhook verification in KEY mode | Recommended in `KEY` mode; required for a real notification loop |
+| `ALIPAY_APP_CERT` | Application public cert | Required in `CERT` mode |
+| `ALIPAY_PUBLIC_CERT` | Alipay public cert | Required in `CERT` mode |
+| `ALIPAY_ROOT_CERT` | Alipay root cert | Required in `CERT` mode |
+| `ALIPAY_GATEWAY` | Alipay gateway URL, different between sandbox and production | Always required |
+
+## Stripe
+
+| Field | Meaning | Required when |
+| --- | --- | --- |
+| `STRIPE_SECRET_KEY` | Stripe Secret Key | Always required |
+| `STRIPE_WEBHOOK_SECRET` | Webhook Signing Secret | Always required |
+
+If you use app-scoped Stripe config, point the Stripe dashboard webhook URL to an app-specific path such as `/api/v1/notify/stripe/demo_app`.
+
+## WeChat Pay
+
+| Field | Meaning | Required when |
+| --- | --- | --- |
+| `WECHATPAY_VERIFY_MODE` | Verification mode, `PUBLIC_KEY` or `CERT` | Recommended to set explicitly |
+| `WECHATPAY_APP_ID` | Official account, mini-program, or open-platform AppId | Always required |
+| `WECHATPAY_MCH_ID` | WeChat Pay merchant ID | Always required |
+| `WECHATPAY_MCH_SERIAL_NO` | Merchant API certificate serial number | Always required |
+| `WECHATPAY_API_V3_KEY` | API v3 key | Always required |
+| `WECHATPAY_PRIVATE_KEY` | Merchant private key, either inline content or a file path | Always required |
+| `WECHATPAY_PUBLIC_KEY_ID` | WeChat Pay public key ID | Required in `PUBLIC_KEY` mode |
+| `WECHATPAY_PUBLIC_KEY` | WeChat Pay public key | Required in `PUBLIC_KEY` mode |
+| `WECHATPAY_PLATFORM_CERT_SERIAL_NO` | Platform certificate serial number | Required in `CERT` mode |
+| `WECHATPAY_PLATFORM_CERT` | WeChat Pay platform certificate | Required in `CERT` mode |
+
+## PayPal
+
+| Field | Meaning | Required when |
+| --- | --- | --- |
+| `PAYPAL_CLIENT_ID` | PayPal Client ID | Currently reserved |
+| `PAYPAL_CLIENT_SECRET` | PayPal Client Secret | Currently reserved |

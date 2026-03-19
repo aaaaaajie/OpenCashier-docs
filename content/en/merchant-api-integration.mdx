@@ -115,6 +115,8 @@ At minimum, merchants must provide:
 
 `allowedChannels` defines the scope the platform can use to complete this order. `OPENCASHIER_ALLOWED_CHANNELS` in `merchant-quickstart` is just the same list written as a comma-separated `.env` value and forwarded to create-order `allowedChannels`.
 
+If you also need the app-scoped provider config APIs, the quickstart bootstrap path, or field-level provider config details, continue with [Provider Config Reference](./provider-config-reference).
+
 | Channel code | Use this for | Current notes |
 | --- | --- | --- |
 | `alipay_qr` | Show an Alipay QR code on a desktop cashier page | Alipay support is available |
@@ -805,6 +807,10 @@ For most cases, this is sufficient for the first integration.
 If you want a runnable merchant-side reference, use [merchant-quickstart](https://github.com/aaaaaajie/OpenCashier/tree/main/examples/merchant-quickstart) from the repo. It keeps signing, create order, redirect, notification verification, and result-page query fallback in one small app.
 
 ### 9.1 Run the example first
+
+If your local database is fresh, start `pnpm dev:web` once, open `http://localhost:5173/settings`, and activate at least one provider first. `ENABLE_DEMO_DATA=1` only seeds merchant apps such as `demo_app`; it does not seed Alipay or Stripe provider secrets.
+
+The default example uses `alipay_page`, so you need a working Alipay config first. If you switch `OPENCASHIER_ALLOWED_CHANNELS` to `stripe_checkout`, configure Stripe first instead.
 
 ```bash
 pnpm install

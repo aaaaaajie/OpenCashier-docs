@@ -115,6 +115,8 @@ sequenceDiagram
 
 `allowedChannels` 表示“这笔订单允许平台在什么支付范围内完成支付”。`merchant-quickstart` 里的 `OPENCASHIER_ALLOWED_CHANNELS` 只是把同一组值按逗号分隔写进 `.env`，然后在创建订单时透传给订单接口的 `allowedChannels`。
 
+如果你还需要看 app-scoped 渠道配置 API、quickstart 自动写配置的路径，或者每个渠道配置字段的说明，请继续看 [渠道配置参考](./provider-config-reference)。
+
 | 渠道编码 | 适用场景 | 当前说明 |
 | --- | --- | --- |
 | `alipay_qr` | PC 收银台展示二维码，由用户使用支付宝扫码支付 | 支付宝能力已可用 |
@@ -807,6 +809,10 @@ success
 如果你想直接运行一份商户侧参考实现，可以使用仓库里的 [merchant-quickstart](https://github.com/aaaaaajie/OpenCashier/tree/main/examples/merchant-quickstart)。它把签名、下单、跳转、通知验签和结果页查单压缩在一个小应用里。
 
 ### 9.1 先跑 example
+
+如果你的本地数据库是全新的，先启动一次 `pnpm dev:web`，打开 `http://localhost:5173/settings`，配置并激活至少一个支付渠道。`ENABLE_DEMO_DATA=1` 只会生成 `demo_app` 这样的商户应用，不会自动写入支付宝或 Stripe 的第三方密钥。
+
+默认 example 使用 `alipay_page`，因此至少需要准备好支付宝配置；如果你把 `OPENCASHIER_ALLOWED_CHANNELS` 改成 `stripe_checkout`，则需要先准备好 Stripe 配置。
 
 ```bash
 pnpm install

@@ -1,0 +1,107 @@
+# 渠道配置参考
+
+本文档说明 OpenCashier 的 `allowedChannels`、app-scoped 渠道配置 API，以及各支付平台的配置字段。
+
+## Merchant Quickstart
+
+`examples/merchant-quickstart` 默认会在首次打开首页或首次下单前，通过 admin API 把当前 `.env` 或 `provider-config.local.json` 中的渠道配置写入到商户应用作用域。
+
+默认调用链路：
+
+1. `PUT /api/v1/admin/merchants/:appId/platform-configs`
+2. `POST /api/v1/admin/merchants/:appId/platform-configs/:configKey/validate`
+3. `POST /api/v1/admin/merchants/:appId/platform-configs/:configKey/activate`
+
+默认示例使用：
+
+- `appId=demo_app`
+- `allowedChannels=["alipay_page"]`
+- `groupKey=alipay`
+
+因此在默认路径下，不需要先启动 `apps/web`。只有你切到二维码类渠道，或者你想改成 UI 手工维护配置时，才需要 `http://localhost:5173/settings`。
+
+quickstart 会先尝试 `validate`。如果在线探针本身失败，但 API 端仍然可以接受这组配置，quickstart 仍然会把 draft 激活，并把探针错误展示在首页状态区。这个行为只针对 quickstart 本地演示路径；正式运维流程仍然建议显式检查验证结果。
+
+## App-scoped Provider Config APIs
+
+下面这组接口和后台“系统设置”里的配置能力 1:1 对齐，但作用域限定在某个商户应用上：
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/v1/admin/merchants/:appId/platform-configs` | 列出当前商户应用作用域下的配置草稿和生效版本 |
+| `PUT` | `/api/v1/admin/merchants/:appId/platform-configs` | 保存某个配置组的草稿 |
+| `POST` | `/api/v1/admin/merchants/:appId/platform-configs/:configKey/validate` | 验证草稿或当前配置是否可用 |
+| `POST` | `/api/v1/admin/merchants/:appId/platform-configs/:configKey/activate` | 让草稿生效 |
+| `DELETE` | `/api/v1/admin/merchants/:appId/platform-configs/:configKey` | 删除当前商户应用作用域下的该配置组 |
+
+说明：
+
+- `appId` 使用的是商户应用的 `appId`。
+- 运行时会优先读取商户应用作用域下的生效配置。
+- 如果某个配置组在当前商户应用作用域下不存在，运行时会回退到全局生效配置。
+- 如果你更喜欢用 UI，也可以继续在 `http://localhost:5173/settings` 里维护全局配置。
+
+## allowedChannels And Provider Groups
+
+`allowedChannels` 表示“这笔订单允许 OpenCashier 在什么支付范围内完成支付”。它和渠道配置组的关系如下：
+
+| `allowedChannels` 值 | 所属支付平台 | 对应配置组 | 说明 |
+| --- | --- | --- | --- |
+| `alipay_qr` | 支付宝 | `alipay` | PC 收银台二维码支付 |
+| `alipay_page` | 支付宝 | `alipay` | PC 浏览器直接跳转支付宝电脑网站支付 |
+| `alipay_wap` | 支付宝 | `alipay` | 手机浏览器跳转支付宝手机网站支付 |
+| `wechat_qr` | 微信支付 | `wechatpay` | PC 展示微信二维码 |
+| `wechat_jsapi` | 微信支付 | `wechatpay` | 微信内 JSAPI 场景 |
+| `stripe_checkout` | Stripe | `stripe` | 直接跳转 Stripe Hosted Checkout |
+| `paypal_checkout` | PayPal | `paypal` | PayPal 预留集成位 |
+
+建议：
+
+- 如果你已经明确这笔订单只走一个最终支付入口，优先传单个 `allowedChannels`。
+- 如果你希望 OpenCashier 在同一支付品牌内按终端自动选择最终动作，再传同品牌的一组渠道值。
+- `allowedChannels` 控制的是订单路由范围；渠道配置组控制的是这个支付平台到底用哪一套密钥和参数。
+
+## Alipay
+
+| 字段 | 含义 | 什么时候需要 |
+| --- | --- | --- |
+| `ALIPAY_AUTH_MODE` | 支付宝接入模式，`KEY` 或 `CERT` | 建议总是显式填写 |
+| `ALIPAY_PRODUCT_CAPABILITIES` | 当前应用开通的支付宝产品能力，取值 `QR`、`PAGE`、`WAP` | 使用托管收银台自动路由时建议填写 |
+| `ALIPAY_APP_ID` | 支付宝应用 ID | 总是需要 |
+| `ALIPAY_PRIVATE_KEY` | 应用私钥，支持 PEM 内容或服务器文件路径 | 总是需要 |
+| `ALIPAY_PUBLIC_KEY` | 支付宝公钥，密钥模式下用于验签返回和通知 | `KEY` 模式建议填写，真实通知闭环时应填写 |
+| `ALIPAY_APP_CERT` | 应用公钥证书 | `CERT` 模式需要 |
+| `ALIPAY_PUBLIC_CERT` | 支付宝公钥证书 | `CERT` 模式需要 |
+| `ALIPAY_ROOT_CERT` | 支付宝根证书 | `CERT` 模式需要 |
+| `ALIPAY_GATEWAY` | 支付宝网关地址，沙箱和生产不同 | 总是需要 |
+
+## Stripe
+
+| 字段 | 含义 | 什么时候需要 |
+| --- | --- | --- |
+| `STRIPE_SECRET_KEY` | Stripe Secret Key | 总是需要 |
+| `STRIPE_WEBHOOK_SECRET` | Webhook Signing Secret | 总是需要 |
+
+如果你使用 app-scoped Stripe 配置，建议把 Stripe dashboard 里的 webhook URL 指向带 `appId` 的路径，例如 `/api/v1/notify/stripe/demo_app`。
+
+## WeChat Pay
+
+| 字段 | 含义 | 什么时候需要 |
+| --- | --- | --- |
+| `WECHATPAY_VERIFY_MODE` | 验签模式，`PUBLIC_KEY` 或 `CERT` | 建议总是显式填写 |
+| `WECHATPAY_APP_ID` | 公众号、小程序或开放平台 AppId | 总是需要 |
+| `WECHATPAY_MCH_ID` | 微信支付商户号 | 总是需要 |
+| `WECHATPAY_MCH_SERIAL_NO` | 商户 API 证书序列号 | 总是需要 |
+| `WECHATPAY_API_V3_KEY` | API v3 密钥 | 总是需要 |
+| `WECHATPAY_PRIVATE_KEY` | 商户私钥，支持内容或文件路径 | 总是需要 |
+| `WECHATPAY_PUBLIC_KEY_ID` | 微信支付公钥 ID | `PUBLIC_KEY` 模式需要 |
+| `WECHATPAY_PUBLIC_KEY` | 微信支付公钥 | `PUBLIC_KEY` 模式需要 |
+| `WECHATPAY_PLATFORM_CERT_SERIAL_NO` | 平台证书序列号 | `CERT` 模式需要 |
+| `WECHATPAY_PLATFORM_CERT` | 微信支付平台证书 | `CERT` 模式需要 |
+
+## PayPal
+
+| 字段 | 含义 | 什么时候需要 |
+| --- | --- | --- |
+| `PAYPAL_CLIENT_ID` | PayPal Client ID | 当前预留 |
+| `PAYPAL_CLIENT_SECRET` | PayPal Client Secret | 当前预留 |
