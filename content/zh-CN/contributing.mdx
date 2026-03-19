@@ -1,0 +1,157 @@
+# 参与 OpenCashier
+
+OpenCashier 仍处于 pre-1.0 阶段。小而聚焦的 PR 更容易评审，也更不容易引入支付流程回归。
+
+本文说明外部贡献者应该如何准备改动、什么情况下需要补 changelog，以及目前这套 changelog 流程自动化到了哪一步。
+
+## 开始之前
+
+- 开始之前先检查是否已有相同问题或相近 PR。
+- 如果是较大的功能、架构调整或支付渠道级集成，先开 issue 对齐范围。
+- 不要提交真实支付密钥、证书、商户密钥或 `.env` 文件。
+- 除非改动明确要更新对外契约，否则不要改变现有支付渠道行为。
+
+## 本地开发
+
+1. 安装依赖。
+
+```bash
+pnpm install
+```
+
+2. 启动本地基础设施。
+
+```bash
+docker compose -f docker-compose.infrastructure.yml up -d
+```
+
+3. 复制环境变量。
+
+```bash
+cp .env.example .env
+```
+
+4. 生成 Prisma Client 并同步数据库结构。
+
+```bash
+pnpm prisma:generate
+pnpm prisma:db:push
+```
+
+5. 启动工作区。
+
+```bash
+pnpm dev
+```
+
+## 校验命令
+
+在提交 PR 前，先跑和改动范围匹配的检查。
+
+```bash
+pnpm typecheck
+pnpm smoke:merchant
+```
+
+按需补充：
+
+```bash
+pnpm build
+pnpm test:tunnel
+pnpm changelog:validate
+pnpm changelog:draft
+```
+
+## Changelog 模型
+
+OpenCashier 现在采用拆分式 changelog 模型：
+
+- 仓库根目录的公开 changelog 只记录已发布版本。
+- 尚未发布、但对外可感知的变更，先以双语 fragment 的形式存放在 `.github/changelog/unreleased/` 下。
+- 内部 draft 文件由这些 fragment 自动生成。
+- 维护者在切公开 tag 时，再把 pending fragment 提升为正式 release changelog。
+
+这意味着：对于未发布改动，贡献者不应该直接修改仓库根目录的公开 changelog 文件。
+
+## 什么情况下需要 changelog fragment
+
+如果你的改动会被外部用户感知到，就应该补 fragment，尤其是这些场景：
+
+- Merchant API 路径、请求体、响应体、鉴权头、签名、幂等或 webhook 语义变化
+- Hosted cashier 行为、`cashierUrl`、路由或渠道会话行为变化
+- 部署拓扑、Docker 镜像、compose 文件、运行时配置、暴露端口、反向代理模式或数据库接线变化
+- 必填或默认环境变量变化
+- 支付渠道可用性、支持渠道集合或默认收银路径变化
+- 管理员或运维流程变化，例如登录、渠道配置、首次初始化
+- quickstart、SDK 或 onboarding 路径变化，导致接入方式发生改变
+- 修复了外部用户能感知的问题、升级风险或回滚风险
+
+通常不需要 fragment 的情况：
+
+- 没有外部影响的纯重构
+- 格式化、注释或纯测试改动
+- 没有对外影响的内部文件移动或 CI 清理
+- 产品行为没变的文案微调
+
+## 贡献者视角的操作流程
+
+如果你提交了一段会影响外部用户的代码，推荐流程是：
+
+1. 先完成产品代码改动。
+2. 在 `.github/changelog/unreleased/` 下新增一个双语 fragment JSON 文件。
+3. 运行 `pnpm changelog:validate`。
+4. 把 fragment 和代码一起放进 PR。
+
+例如，如果你的 PR 改了商户可感知的行为，可以新增一个类似 `.github/changelog/unreleased/2026-03-20-merchant-timeout.json` 的文件：
+
+```json
+{
+  "title": "merchant-timeout",
+  "entries": [
+    {
+      "category": "Changed",
+      "en": "Changed the default merchant notification timeout to 10 seconds.",
+      "zh-CN": "将商户通知的默认超时时间调整为 10 秒。"
+    }
+  ]
+}
+```
+
+写法要站在部署者或接入方的视角，描述“外部看到了什么变化”，而不是“内部怎么重构了”。
+
+## 当前自动化到了哪一步
+
+目前是部分自动化：
+
+- `pnpm changelog:validate` 会校验 fragment 结构和 draft 一致性
+- `pnpm changelog:draft` 会重新生成内部 pending-release draft
+- GitHub Actions 会在 PR 中校验 changelog 数据
+- `main` 分支有新改动时，会自动同步内部 draft 文件
+
+仍然保留人工判断的部分：
+
+- 判断这次改动是否应该写 changelog
+- 写最终面向用户的 changelog 文案
+- 决定发布版本号和发布日期
+- 把 pending fragment 提升为正式 release changelog
+
+维护者发版时使用：
+
+```bash
+pnpm changelog:release -- v0.1.0-beta.5 2026-03-20
+```
+
+## PR 检查清单
+
+- 改动范围清晰，目的明确。
+- 对外可感知变更已经补了 changelog fragment。
+- 行为变化对应的文档已经更新。
+- 没有提交密钥、生产凭据或私有证书。
+- 本地执行过相关命令，并在 PR 中说明结果。
+
+## 沟通入口
+
+- Bug 反馈：使用 bug issue 模板。
+- 功能建议：使用 feature request 模板。
+- 使用或接入问题：使用 support/question 模板。
+- 安全问题：按仓库安全策略处理。
