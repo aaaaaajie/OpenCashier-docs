@@ -232,11 +232,17 @@ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 
 ### 4.2 Node.js SDK example
 
-Recommended path: use the official Node/TypeScript SDK directly.
+OpenCashier provides an official Node/TypeScript SDK as `@opencashier/sdk`.
 
-```bash
-pnpm add @opencashier/sdk
-```
+The correct path today is:
+
+- confirm which OpenCashier version you need to align with
+- install the matching `@opencashier/sdk` version from npm
+- wire that package into your merchant project
+
+For the full installation and end-to-end flow, see the [Node SDK Guide](./node-sdk).
+
+After the SDK is installed, the minimum usage looks like this:
 
 ```ts
 import { OpenCashierClient } from "@opencashier/sdk";

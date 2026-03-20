@@ -1,0 +1,291 @@
+# Node SDK 接入指南
+
+本文档面向外部业务系统、商户自有系统或 SaaS 平台服务端里的 Node.js / TypeScript 开发者。
+
+目标很明确：
+
+- 直接从 npm 安装官方 SDK
+- 再在你的商户服务端里完成下单、跳转 `cashierUrl`、通知验签和查单兜底
+- 按步骤做完后，可以形成一个闭环接入
+
+## 1. 当前公开可用状态
+
+OpenCashier 官方 Node/TypeScript SDK 对外使用 npm 分发，包名是：
+
+```text
+@opencashier/sdk
+```
+
+当你需要的目标版本已经发布后，外部开发者直接安装这个包即可：
+
+```bash
+pnpm add @opencashier/sdk
+```
+
+如果你使用的是 `npm`：
+
+```bash
+npm install @opencashier/sdk
+```
+
+如果你的 OpenCashier 环境由平台方托管，仍然建议先确认你应该跟哪个版本对齐，再显式安装那个版本。
+
+## 2. 先选一个明确版本
+
+不要无脑跟随 `latest`。更稳的做法是明确安装一个版本号。
+
+优先使用：
+
+- 稳定版，例如 `0.2.0`
+
+如果你明确要验证新功能，也可以使用：
+
+- 预发布版，例如 `0.2.0-beta.1`
+
+下面示例统一使用：
+
+```text
+0.2.0-beta.1
+```
+
+你实际接入时，把它替换成你的目标版本。
+
+显式安装示例：
+
+```bash
+pnpm add @opencashier/sdk@0.2.0-beta.1
+```
+
+```bash
+npm install @opencashier/sdk@0.2.0-beta.1
+```
+
+如果你的 OpenCashier 由平台方托管，建议先确认两件事再安装：
+
+- 当前部署的 OpenCashier 版本
+- 你要安装的 SDK 版本是否和这个版本一致
+
+## 3. 安装到你的商户项目
+
+切到你自己的 Node.js 商户项目目录，在目标版本已经可用后直接安装 npm 包：
+
+```bash
+cd /path/to/your-merchant-app
+pnpm add @opencashier/sdk@0.2.0-beta.1
+```
+
+安装完成后，包名仍然是：
+
+```text
+@opencashier/sdk
+```
+
+如果你使用的是 `npm`，可以这样安装同一个包：
+
+```bash
+npm install @opencashier/sdk@0.2.0-beta.1
+```
+
+## 4. 如果你需要一个尚未发布到 npm 的特定版本
+
+公开默认路径是 npm 安装，不再建议外部开发者把“克隆 monorepo、构建 tarball”当成常规接入步骤。
+
+如果你必须对齐一个尚未公开发布到 npm 的内部版本，优先让平台方直接给你对应版本号或安装包，而不是自己从源码仓库构建。
+
+## 5. SDK 覆盖哪些能力
+
+Node SDK 会把下面这些重复工作收进同一个客户端：
+
+- 商户请求签名
+- `X-App-Id / X-Timestamp / X-Nonce / X-Sign-Type / X-Sign`
+- 写接口默认幂等键
+- 平台统一响应解析和错误归一化
+- 商户通知验签
+
+## 6. 初始化 SDK 客户端
+
+最小初始化方式如下：
+
+```ts
+import { OpenCashierClient } from "@opencashier/sdk";
+
+export const opencashier = new OpenCashierClient({
+  baseUrl: process.env.OPENCASHIER_BASE_URL!,
+  merchant: {
+    appId: process.env.OPENCASHIER_APP_ID!,
+    appSecret: process.env.OPENCASHIER_APP_SECRET!
+  }
+});
+```
+
+## 7. 创建订单并跳转到 `cashierUrl`
+
+服务端创建订单的最小示例如下：
+
+```ts
+const created = await opencashier.orders.create({
+  merchantOrderNo: "ORDER_202603190001",
+  amount: 100,
+  currency: "CNY",
+  subject: "Test order",
+  description: "OpenCashier Node SDK guide",
+  notifyUrl: process.env.OPENCASHIER_NOTIFY_URL!,
+  returnUrl: process.env.OPENCASHIER_RETURN_URL!,
+  allowedChannels: ["alipay_page"]
+});
+
+console.log(created.platformOrderNo);
+console.log(created.cashierUrl);
+```
+
+返回结果里最重要的是：
+
+- `platformOrderNo`
+- `cashierUrl`
+- `status`
+- `expireTime`
+
+推荐做法：
+
+1. 你的服务端创建订单
+2. 保存 `merchantOrderNo`、`platformOrderNo`、`cashierUrl`
+3. 前端直接跳转到 `cashierUrl`
+
+不要自己拼接支付页 URL，也不要把支付成功只建立在前端跳转结果上。
+
+## 8. 验签 OpenCashier 商户通知
+
+商户通知处理时，最关键的是两点：
+
+- 必须拿到原始请求体字符串 `rawBody`
+- 验签成功并完成业务处理后，返回纯文本 `success`
+
+示例：
+
+```ts
+const payload = opencashier.notifications.verify<{
+  notifyId?: string;
+  eventType?: string;
+  platformOrderNo?: string;
+  merchantOrderNo?: string;
+  status?: string;
+  paidTime?: string;
+  paidAmount?: number;
+}>({
+  headers: request.headers,
+  rawBody
+});
+
+if (payload.status === "SUCCESS") {
+  // 在这里更新你自己的业务订单状态
+}
+
+response.statusCode = 200;
+response.setHeader("Content-Type", "text/plain; charset=utf-8");
+response.end("success");
+```
+
+如果验签失败，应返回失败状态，不要误返回 `success`。
+
+## 9. 在结果页或补偿任务里主动查单
+
+支付完成后的前端跳转只能当作用户体验补充，不能当作最终支付成功依据。
+
+推荐在以下场景主动查单：
+
+- 用户回到结果页时
+- 商户通知延迟时
+- 你的业务侧补偿任务里
+
+示例：
+
+```ts
+const order = await opencashier.orders.getByMerchantOrderNo(
+  "ORDER_202603190001"
+);
+
+console.log(order.status);
+console.log(order.paidTime);
+console.log(order.paidAmount);
+```
+
+推荐判断方式：
+
+- 以商户通知为主
+- 以主动查单为兜底
+- 不要只根据浏览器回跳判断“支付成功”
+
+## 10. 发起退款
+
+如果你已经拿到了支付成功订单的 `platformOrderNo`，可以直接发起退款：
+
+```ts
+const refund = await opencashier.refunds.create({
+  platformOrderNo: "PO_202603190001",
+  merchantRefundNo: "RF_202603190001",
+  refundAmount: 100,
+  reason: "User requested refund"
+});
+
+console.log(refund.platformRefundNo);
+console.log(refund.status);
+```
+
+后续可以按商户退款单号查询：
+
+```ts
+const queriedRefund =
+  await opencashier.refunds.getByMerchantRefundNo("RF_202603190001");
+```
+
+## 11. 最容易出错的地方
+
+### 把 `baseUrl` 写成站点根路径
+
+错误示例：
+
+```text
+https://pay.example.com
+```
+
+正确示例：
+
+```text
+https://pay.example.com/api/v1
+```
+
+### 通知验签时用了解析后的 JSON，而不是原始 body
+
+验签必须使用原始请求体字符串。
+
+如果你的 Web 框架默认先把 body 解析成对象，再去验签，通常会失败。
+
+### 发了订单但没有保存 `platformOrderNo` 和 `cashierUrl`
+
+这两个字段都应该保存：
+
+- `platformOrderNo` 用于查单和退款
+- `cashierUrl` 用于把用户带回支付入口
+
+### 用浏览器回跳当作支付成功依据
+
+正确做法是：
+
+- 通知为主
+- 查单兜底
+
+## 12. 如果你想先看一份参考实现
+
+如果你想看一份完整的 Node 商户接入参考实现，可以参考 OpenCashier 仓库里的：
+
+- 与目标平台版本对应的 OpenCashier release tag 下的 `examples/merchant-quickstart`
+
+它已经把下面这些动作连成一条可运行链路：
+
+- SDK 初始化
+- 创建订单
+- 跳转 `cashierUrl`
+- 验签商户通知
+- 结果页查单兜底
+
+如果你不想使用 SDK，或者你需要直接按协议自行实现签名与调用，请继续看 [商户接入指南](./merchant-api-integration)。

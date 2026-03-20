@@ -1,0 +1,300 @@
+# Node SDK Guide
+
+This guide is for Node.js or TypeScript developers working in external business systems, merchant-owned backends, or SaaS platform services that integrate with OpenCashier.
+
+The goal is straightforward:
+
+- install the official SDK directly from npm
+- wire create-order, `cashierUrl` redirect, notification verification, and order-query fallback into your merchant service
+- finish with a closed integration loop
+
+## 1. Current public availability
+
+The official OpenCashier Node/TypeScript SDK is distributed on npm as:
+
+```text
+@opencashier/sdk
+```
+
+When the target version you need has been published, install that package directly:
+
+```bash
+pnpm add @opencashier/sdk
+```
+
+If you use `npm`:
+
+```bash
+npm install @opencashier/sdk
+```
+
+If your OpenCashier environment is operated by a platform team, confirm which version you should align with and install that version explicitly.
+
+## 2. Choose one explicit version
+
+Do not blindly follow `latest`. A pinned version is safer.
+
+Prefer:
+
+- a stable release such as `0.2.0`
+
+If you intentionally want to validate newer work, you can also use:
+
+- a prerelease such as `0.2.0-beta.1`
+
+The examples below use:
+
+```text
+0.2.0-beta.1
+```
+
+Replace it with your actual target version.
+
+Pinned install examples:
+
+```bash
+pnpm add @opencashier/sdk@0.2.0-beta.1
+```
+
+```bash
+npm install @opencashier/sdk@0.2.0-beta.1
+```
+
+If your OpenCashier environment is operated by a platform team, confirm before installation:
+
+- which OpenCashier version is deployed
+- whether the SDK version you install matches that version
+
+## 3. Install it into your merchant project
+
+Move to your own merchant project and install the npm package directly once your target version is available:
+
+```bash
+cd /path/to/your-merchant-app
+pnpm add @opencashier/sdk@0.2.0-beta.1
+```
+
+After installation, the package name is still:
+
+```text
+@opencashier/sdk
+```
+
+If you use `npm`, install the same package like this:
+
+```bash
+npm install @opencashier/sdk@0.2.0-beta.1
+```
+
+## 4. If you need a version that is not published to npm yet
+
+The public default path is npm installation. Building a tarball from the monorepo should no longer be your standard integration path.
+
+If you must align to an internal version that is not on npm yet, ask your platform team for the exact published version or installation package instead of building the SDK from source yourself.
+
+## 5. Prepare the minimum env vars
+
+Add these env vars to your merchant backend:
+
+```env
+OPENCASHIER_BASE_URL=https://pay.example.com/api/v1
+OPENCASHIER_APP_ID=your_app_id
+OPENCASHIER_APP_SECRET=your_app_secret
+OPENCASHIER_NOTIFY_URL=https://merchant.example.com/notify/opencashier
+OPENCASHIER_RETURN_URL=https://merchant.example.com/pay/result
+```
+
+Notes:
+
+- `OPENCASHIER_BASE_URL` must point to the Merchant API base, which is `/api/v1`
+- do not point it at the site root
+- `OPENCASHIER_NOTIFY_URL` must be reachable from the OpenCashier server
+- your notification endpoint must return plain text `success` after successful processing
+
+## 5. Initialize the SDK client
+
+Minimal initialization:
+
+```ts
+import { OpenCashierClient } from "@opencashier/sdk";
+
+export const opencashier = new OpenCashierClient({
+  baseUrl: process.env.OPENCASHIER_BASE_URL!,
+  merchant: {
+    appId: process.env.OPENCASHIER_APP_ID!,
+    appSecret: process.env.OPENCASHIER_APP_SECRET!
+  }
+});
+```
+
+## 7. Create an order and redirect to `cashierUrl`
+
+Minimal server-side order creation:
+
+```ts
+const created = await opencashier.orders.create({
+  merchantOrderNo: "ORDER_202603190001",
+  amount: 100,
+  currency: "CNY",
+  subject: "Test order",
+  description: "OpenCashier Node SDK guide",
+  notifyUrl: process.env.OPENCASHIER_NOTIFY_URL!,
+  returnUrl: process.env.OPENCASHIER_RETURN_URL!,
+  allowedChannels: ["alipay_page"]
+});
+
+console.log(created.platformOrderNo);
+console.log(created.cashierUrl);
+```
+
+The most important fields in the response are:
+
+- `platformOrderNo`
+- `cashierUrl`
+- `status`
+- `expireTime`
+
+Recommended flow:
+
+1. your backend creates the order
+2. persist `merchantOrderNo`, `platformOrderNo`, and `cashierUrl`
+3. redirect the frontend directly to `cashierUrl`
+
+Do not build the payment URL yourself, and do not treat frontend redirect completion as final payment success.
+
+## 8. Verify OpenCashier merchant notifications
+
+Two rules matter most:
+
+- you must keep the original request body string as `rawBody`
+- after successful verification and processing, return plain text `success`
+
+Example:
+
+```ts
+const payload = opencashier.notifications.verify<{
+  notifyId?: string;
+  eventType?: string;
+  platformOrderNo?: string;
+  merchantOrderNo?: string;
+  status?: string;
+  paidTime?: string;
+  paidAmount?: number;
+}>({
+  headers: request.headers,
+  rawBody
+});
+
+if (payload.status === "SUCCESS") {
+  // update your own business order state here
+}
+
+response.statusCode = 200;
+response.setHeader("Content-Type", "text/plain; charset=utf-8");
+response.end("success");
+```
+
+If signature verification fails, return a failure response. Do not return `success` by mistake.
+
+## 9. Query orders as fallback
+
+The browser return flow is only a user-experience helper. It is not your final payment-success source of truth.
+
+Query the order in these cases:
+
+- when the user lands on your result page
+- when merchant notification delivery is delayed
+- inside reconciliation or compensation jobs
+
+Example:
+
+```ts
+const order = await opencashier.orders.getByMerchantOrderNo(
+  "ORDER_202603190001"
+);
+
+console.log(order.status);
+console.log(order.paidTime);
+console.log(order.paidAmount);
+```
+
+Recommended rule:
+
+- notification first
+- order query as fallback
+- never rely on browser redirect alone
+
+## 10. Create refunds
+
+Once you have the paid order `platformOrderNo`, you can create a refund:
+
+```ts
+const refund = await opencashier.refunds.create({
+  platformOrderNo: "PO_202603190001",
+  merchantRefundNo: "RF_202603190001",
+  refundAmount: 100,
+  reason: "User requested refund"
+});
+
+console.log(refund.platformRefundNo);
+console.log(refund.status);
+```
+
+Later you can query it by merchant refund number:
+
+```ts
+const queriedRefund =
+  await opencashier.refunds.getByMerchantRefundNo("RF_202603190001");
+```
+
+## 11. Common mistakes
+
+### Pointing `baseUrl` at the site root
+
+Wrong:
+
+```text
+https://pay.example.com
+```
+
+Correct:
+
+```text
+https://pay.example.com/api/v1
+```
+
+### Verifying notifications with parsed JSON instead of the raw body
+
+Signature verification must use the original request body string.
+
+If your web framework parses the body into an object first and you verify that object, verification will usually fail.
+
+### Creating orders without storing `platformOrderNo` and `cashierUrl`
+
+Store both:
+
+- `platformOrderNo` for query and refund flows
+- `cashierUrl` to send the user back to the payment entry
+
+### Treating browser return as payment success
+
+Correct rule:
+
+- notification first
+- query fallback
+
+## 12. If you want a reference implementation
+
+If you want a full Node merchant reference implementation, see:
+
+- `examples/merchant-quickstart` under the OpenCashier release tag that matches your target platform version
+
+That example already wires together:
+
+- SDK initialization
+- order creation
+- `cashierUrl` redirect
+- merchant notification verification
+- result-page query fallback
+
+If you prefer not to use the SDK, or you need to implement signing and calling directly from the protocol, continue with the [Merchant Integration Guide](./merchant-api-integration).

@@ -234,11 +234,17 @@ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 
 ### 4.2 Node.js SDK 示例
 
-推荐直接使用官方 Node/TypeScript SDK：
+OpenCashier 提供官方 Node/TypeScript SDK，包名是 `@opencashier/sdk`。
 
-```bash
-pnpm add @opencashier/sdk
-```
+当前正确用法是：
+
+- 先确认你要对齐的 OpenCashier 版本
+- 直接从 npm 安装对应版本的 `@opencashier/sdk`
+- 再把它接到你的商户项目里
+
+完整安装和闭环接入步骤见 [Node SDK 接入指南](./node-sdk)。
+
+SDK 安装完成后，最小使用方式如下：
 
 ```ts
 import { OpenCashierClient } from "@opencashier/sdk";
