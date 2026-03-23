@@ -2,9 +2,13 @@
 
 This page documents `allowedChannels`, app-scoped provider config APIs, and provider-specific config fields in OpenCashier.
 
+If you want the step-by-step local bring-up path first, start with [Merchant Quickstart Guide](./merchant-quickstart).
+
 ## Merchant Quickstart
 
 `examples/merchant-quickstart` can write provider config into the merchant app scope on the first page load or before the first checkout, using the admin API.
+
+The example now keeps quickstart config in one JSONC file: copy `quickstart.config.example.jsonc` to `quickstart.config.jsonc`, set `providerPlatform`, then fill the matching provider block. Provider material fields accept a local file path or a double-quoted PEM string with `\n` escapes.
 
 Under the hood, quickstart now does that through the official SDK:
 
@@ -14,19 +18,17 @@ const client = new OpenCashierClient({
   appId: "demo_app",
   appSecret: "demo_app_secret",
   admin: {
-    username: process.env.OPENCASHIER_ADMIN_USERNAME!,
-    password: process.env.OPENCASHIER_ADMIN_PASSWORD!
+    username: "admin",
+    password: "admin123456"
   }
 });
 
 await client.providers.setup({
   alipay: {
     authMode: "KEY",
-    appId: process.env.ALIPAY_APP_ID!,
-    privateKey: process.env.ALIPAY_PRIVATE_KEY!,
-    publicKey: process.env.ALIPAY_PUBLIC_KEY!,
-    gateway: process.env.ALIPAY_GATEWAY!,
-    productCapabilities: ["PAGE"]
+    appId: "2021000000000000",
+    privateKey: "./certs/alipay-private-key.pem",
+    publicKey: "./certs/alipay-public-key.pem"
   }
 });
 ```

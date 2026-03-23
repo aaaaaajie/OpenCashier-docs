@@ -1,0 +1,161 @@
+# Merchant Quickstart 指南
+
+目标：完成一次从创建订单到跳转 `cashierUrl` 的闭环体验
+
+如果你想先看协议和接口说明，请读 [商户接入指南](./merchant-api-integration)。如果你想查每个渠道配置字段，请读 [渠道配置参考](./provider-config-reference)。
+
+仓库里的 `examples/merchant-quickstart/README` 现在只保留仓库内补充说明和代码结构导读；完整起步步骤以本文为主。
+
+## 1. 这个 example 做了什么
+
+`examples/merchant-quickstart` 是一个很小的商户侧示例应用。它维护一份本地订单快照，通过官方 SDK 创建订单，把浏览器跳到平台返回的 `cashierUrl`，接收并验签商户通知，然后在结果页再主动查一次订单状态。
+
+在默认的 `alipay_page` 路径下，不需要启动 `apps/web`。
+
+## 2. 配置 `.env`
+
+确认 API 根目录 `.env` 里有这些字段：
+
+```env
+ENABLE_DEMO_DATA=1
+APP_SECRET=replace-with-a-local-secret
+APP_BASE_URL=http://localhost:3010
+APP_PORT=3010
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/payment_platform?schema=public
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=123456
+```
+
+这些字段的作用：
+
+- `ENABLE_DEMO_DATA=1` 会生成 `demo_app`
+- `APP_BASE_URL` 和 `APP_PORT` 决定 quickstart 默认要访问的本地 Merchant API 根地址
+- `ADMIN_USERNAME` 和 `ADMIN_PASSWORD` 会被 quickstart 复用来做 provider config bootstrap
+
+## 3. 复制 quickstart 配置文件
+
+```bash
+cp examples/merchant-quickstart/quickstart.config.example.jsonc examples/merchant-quickstart/quickstart.config.jsonc
+```
+
+现在这个 example 只保留这一份 JSONC 配置文件，而且每个字段都有注释。
+
+## 4. 只填写当前支付平台的配置块
+
+### 支付宝
+
+默认路径下，保留：
+
+```json
+{
+  "providerPlatform": "alipay",
+  "alipay": {
+    "appId": "2021000000000000",
+    "privateKey": "./certs/alipay-private-key.pem",
+    "publicKey": "./certs/alipay-public-key.pem"
+  }
+}
+```
+
+只有当你已经准备好了支付宝应用证书、平台公钥证书和根证书时，才需要切到 `authMode: "CERT"`。
+
+### Stripe
+
+如果你要跑 Stripe：
+
+```json
+{
+  "providerPlatform": "stripe",
+  "stripe": {
+    "secretKey": "sk_test_xxx",
+    "webhookSecret": "whsec_xxx"
+  }
+}
+```
+
+同一次运行不要同时填写两套 provider 配置。preflight 只检查当前激活的支付平台。
+
+## 5. 先跑 preflight
+
+在仓库根目录执行：
+
+```bash
+pnpm check:merchant-quickstart
+```
+
+它会检查：
+
+- 根目录 `.env` 和可选的 `.env.local`
+- `quickstart.config.jsonc`
+- 当前支付平台对应的必填项
+- 支付宝证书或密钥文件路径
+- Merchant API 根地址解析结果
+- API 和 quickstart 端口是否已被占用
+
+你也可以从 example 包里执行同一份检查：
+
+```bash
+pnpm --filter @opencashier/merchant-quickstart check:local-start
+```
+
+## 6. 启动 API
+
+```bash
+pnpm dev:api
+```
+
+等 Nest 完成启动，监听到本地 API 端口后再继续。
+
+## 7. 启动 quickstart
+
+```bash
+pnpm dev:merchant-quickstart
+```
+
+这个命令在真正启动 HTTP 服务前，还会再跑一遍同样的 preflight。如果 API 还没好，或者 `4100` 端口已经被占用，它会直接停下并报清楚原因，而不是继续走到更难判断的启动错误。
+
+## 8. 打开 example
+
+打开：
+
+```text
+http://127.0.0.1:4100
+```
+
+然后点击 `Create Order And Redirect`。
+
+默认链路是：
+
+1. quickstart 通过 SDK 创建订单
+2. OpenCashier 返回 `cashierUrl`
+3. 浏览器跳到托管收银台或直接跳到支付平台页面
+4. OpenCashier 后续把一条商户通知转发到 quickstart `/notify/opencashier`
+5. 结果页再次主动查单做兜底
+
+## 9. 不同支付平台的注意点
+
+### 支付宝
+
+- 本地 `notifyUrl` 足够完成创建订单和首次跳转 `cashierUrl`
+- 只有在验证真实异步回调时，才需要公网回调地址或 tunnel
+- 默认 `allowedChannels=["alipay_page"]` 时，不需要 `apps/web`
+
+### Stripe
+
+- quickstart 里只要求 `stripe.secretKey` 和 `stripe.webhookSecret`
+- 支付宝证书、公钥文件和 callback tunnel 都和 Stripe 启动无关
+
+## 10. 最常见的首次启动错误
+
+- `Cannot PUT /v1/admin/merchants/:appId/platform-configs`
+  通常表示 quickstart 指向了错误的 Merchant API 根地址。
+- `OpenCashier request failed with status 404`
+  通常表示 API 没启动、admin 凭据不对，或者 `appId` / `appSecret` 不是一个真实商户应用。
+- 跳转到了 `http://localhost:3000/api/cashier/...`
+  通常表示 API 的 `APP_BASE_URL` 不对，或者改完 `.env` 后没有重启 API。
+
+## 11. 下一步阅读
+
+- [商户接入指南](./merchant-api-integration)
+- [渠道配置参考](./provider-config-reference)
+- [Node SDK 接入指南](./node-sdk)

@@ -2,9 +2,13 @@
 
 本文档说明 OpenCashier 的 `allowedChannels`、app-scoped 渠道配置 API，以及各支付平台的配置字段。
 
+如果你想先按步骤把本地 example 跑起来，建议先看 [Merchant Quickstart 指南](./merchant-quickstart)。
+
 ## Merchant Quickstart
 
-`examples/merchant-quickstart` 默认会在首次打开首页或首次下单前，通过 admin API 把当前 `.env` 或 `provider-config.local.json` 中的渠道配置写入到商户应用作用域。
+`examples/merchant-quickstart` 默认会在首次打开首页或首次下单前，通过 admin API 把当前 quickstart 配置写入到商户应用作用域。
+
+现在这个 example 只保留一份 JSONC 配置：复制 `quickstart.config.example.jsonc` 到 `quickstart.config.jsonc`，先设 `providerPlatform`，再补对应的支付平台配置块。密钥和证书字段支持写本地文件路径，或者用双引号包裹并用 `\n` 表示多行 PEM 内容。
 
 现在 quickstart 底层就是通过官方 SDK 完成这件事：
 
@@ -14,19 +18,17 @@ const client = new OpenCashierClient({
   appId: "demo_app",
   appSecret: "demo_app_secret",
   admin: {
-    username: process.env.OPENCASHIER_ADMIN_USERNAME!,
-    password: process.env.OPENCASHIER_ADMIN_PASSWORD!
+    username: "admin",
+    password: "admin123456"
   }
 });
 
 await client.providers.setup({
   alipay: {
     authMode: "KEY",
-    appId: process.env.ALIPAY_APP_ID!,
-    privateKey: process.env.ALIPAY_PRIVATE_KEY!,
-    publicKey: process.env.ALIPAY_PUBLIC_KEY!,
-    gateway: process.env.ALIPAY_GATEWAY!,
-    productCapabilities: ["PAGE"]
+    appId: "2021000000000000",
+    privateKey: "./certs/alipay-private-key.pem",
+    publicKey: "./certs/alipay-public-key.pem"
   }
 });
 ```

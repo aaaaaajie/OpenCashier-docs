@@ -1,0 +1,163 @@
+# Merchant Quickstart Guide
+
+Goal:
+
+- complete one create-order to `cashierUrl` redirect flow
+
+If you need protocol details first, read [Merchant Integration](./merchant-api-integration). If you need field-level provider config details, read [Provider Config Reference](./provider-config-reference).
+
+The repo README under `examples/merchant-quickstart` now keeps only repo-local notes and a code map. Use this page as the main step-by-step onboarding guide.
+
+## 1. What this example does
+
+`examples/merchant-quickstart` is a small merchant-side app. It keeps one local order store, creates orders through the official SDK, redirects the browser to the returned `cashierUrl`, verifies merchant notifications, and queries order status again on the result page.
+
+With the default `alipay_page` path, it does not require `apps/web`.
+
+## 2. Configure `.env`
+
+Make sure the API root `.env` contains:
+
+```env
+ENABLE_DEMO_DATA=1
+APP_SECRET=replace-with-a-local-secret
+APP_BASE_URL=http://localhost:3010
+APP_PORT=3010
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/payment_platform?schema=public
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=123456
+```
+
+Why these fields matter:
+
+- `ENABLE_DEMO_DATA=1` creates `demo_app`
+- `APP_BASE_URL` and `APP_PORT` define the local Merchant API root that quickstart will target by default
+- `ADMIN_USERNAME` and `ADMIN_PASSWORD` are reused by quickstart when it bootstraps provider config
+
+## 3. Copy quickstart config
+
+```bash
+cp examples/merchant-quickstart/quickstart.config.example.jsonc examples/merchant-quickstart/quickstart.config.jsonc
+```
+
+This example now keeps only this one JSONC config file, with comments on each field.
+
+## 4. Complete only the config block for the current provider
+
+### Alipay
+
+For the default path, keep:
+
+```json
+{
+  "providerPlatform": "alipay",
+  "alipay": {
+    "appId": "2021000000000000",
+    "privateKey": "./certs/alipay-private-key.pem",
+    "publicKey": "./certs/alipay-public-key.pem"
+  }
+}
+```
+
+Switch to `authMode: "CERT"` only when you already have the Alipay app cert, platform public cert, and root cert ready.
+
+### Stripe
+
+If you want Stripe instead:
+
+```json
+{
+  "providerPlatform": "stripe",
+  "stripe": {
+    "secretKey": "sk_test_xxx",
+    "webhookSecret": "whsec_xxx"
+  }
+}
+```
+
+Do not fill both provider blocks for the same run. The preflight checks only the currently active provider.
+
+## 5. Run the preflight first
+
+From the repo root:
+
+```bash
+pnpm check:merchant-quickstart
+```
+
+It checks:
+
+- root `.env` and optional `.env.local`
+- `quickstart.config.jsonc`
+- the active provider only
+- provider file paths for Alipay
+- API base URL resolution
+- whether API and quickstart ports are already occupied
+
+You can also run the same check from the example package:
+
+```bash
+pnpm --filter @opencashier/merchant-quickstart check:local-start
+```
+
+## 6. Start the API
+
+```bash
+pnpm dev:api
+```
+
+Wait until Nest has finished booting and is listening on the local API port.
+
+## 7. Start the quickstart
+
+```bash
+pnpm dev:merchant-quickstart
+```
+
+This command runs the same preflight again before starting the HTTP server. If API is not ready or port `4100` is already occupied, it stops early with a direct error instead of continuing into a less obvious startup failure.
+
+## 8. Open the example
+
+Open:
+
+```text
+http://127.0.0.1:4100
+```
+
+Then click `Create Order And Redirect`.
+
+The default flow is:
+
+1. quickstart creates an order through the SDK
+2. OpenCashier returns `cashierUrl`
+3. the browser redirects to hosted cashier or directly to the provider page
+4. OpenCashier later forwards one merchant notification to quickstart `/notify/opencashier`
+5. the result page queries order status again as a fallback
+
+## 9. Provider-specific notes
+
+### Alipay
+
+- local `notifyUrl` is enough for create-order and the initial `cashierUrl` redirect
+- a public callback URL or tunnel becomes necessary only when you validate the real async provider callback
+- with default `allowedChannels=["alipay_page"]`, you do not need `apps/web`
+
+### Stripe
+
+- only `stripe.secretKey` and `stripe.webhookSecret` are required in the quickstart config
+- Alipay certs, public keys, and tunnels are irrelevant for Stripe startup
+
+## 10. Common first-run failures
+
+- `Cannot PUT /v1/admin/merchants/:appId/platform-configs`
+  Usually means quickstart is pointing at the wrong Merchant API base URL.
+- `OpenCashier request failed with status 404`
+  Usually means API is not running, admin credentials are wrong, or `appId` / `appSecret` does not match a real merchant app.
+- redirect goes to `http://localhost:3000/api/cashier/...`
+  Usually means API `APP_BASE_URL` is wrong or API was not restarted after env changes.
+
+## 11. Next reading
+
+- [Merchant Integration](./merchant-api-integration)
+- [Provider Config Reference](./provider-config-reference)
+- [Node SDK Guide](./node-sdk)

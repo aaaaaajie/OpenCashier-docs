@@ -111,7 +111,7 @@ sequenceDiagram
 
 ### 2.4 allowedChannels 取值说明
 
-`allowedChannels` 表示“这笔订单允许平台在什么支付范围内完成支付”。`merchant-quickstart` 里的 `OPENCASHIER_ALLOWED_CHANNELS` 只是把同一组值按逗号分隔写进 `.env`，然后在创建订单时透传给订单接口的 `allowedChannels`。
+`allowedChannels` 表示“这笔订单允许平台在什么支付范围内完成支付”。`merchant-quickstart` 里只是把同一组值直接写进 `quickstart.config.jsonc`，然后在创建订单时透传给订单接口的 `allowedChannels`。
 
 如果你还需要看 app-scoped 渠道配置 API、quickstart 自动写配置的路径，或者每个渠道配置字段的说明，请继续看 [渠道配置参考](./provider-config-reference)。
 
@@ -940,7 +940,8 @@ success
 
 - API 根目录 `.env` 中开启 `ENABLE_DEMO_DATA=1`
 - API 根目录里可用的 `ADMIN_USERNAME` / `ADMIN_PASSWORD`
-- `examples/merchant-quickstart/.env` 或 `provider-config.local.json` 中的渠道配置
+- `examples/merchant-quickstart/quickstart.config.jsonc`
+- 最少只要配置 `providerPlatform` 和对应的 `alipay` 或 `stripe` 配置块
 
 当前 quickstart 会在 HTTP 服务启动前通过 admin API 把 app-scoped 渠道配置写进去，所以默认的 `alipay_page` 路径不再要求先启动 `pnpm dev:web`。
 
@@ -950,7 +951,7 @@ pnpm dev:api
 pnpm dev:merchant-quickstart
 ```
 
-然后打开 `http://127.0.0.1:4100`。完整说明见 [examples/merchant-quickstart/README.zh-CN.md](https://github.com/aaaaaajie/OpenCashier/blob/main/examples/merchant-quickstart/README.zh-CN.md)。
+然后打开 `http://127.0.0.1:4100`。如果你想看一份面向外部开发者的完整起步路径，请直接看 [Merchant Quickstart 指南](./merchant-quickstart)。仓库内补充说明仍然在 [examples/merchant-quickstart/README.zh-CN.md](https://github.com/aaaaaajie/OpenCashier/blob/main/examples/merchant-quickstart/README.zh-CN.md)。
 
 ### 9.2 对照 SDK 下单代码
 

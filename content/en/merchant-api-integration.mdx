@@ -111,7 +111,7 @@ At minimum, merchants must provide:
 
 ### 2.4 allowedChannels reference
 
-`allowedChannels` defines the scope the platform can use to complete this order. `OPENCASHIER_ALLOWED_CHANNELS` in `merchant-quickstart` is just the same list written as a comma-separated `.env` value and forwarded to create-order `allowedChannels`.
+`allowedChannels` defines the scope the platform can use to complete this order. In `merchant-quickstart`, it is the same list written directly in `quickstart.config.jsonc` and forwarded to create-order `allowedChannels`.
 
 If you also need the app-scoped provider config APIs, the quickstart bootstrap path, or field-level provider config details, continue with [Provider Config Reference](./provider-config-reference).
 
@@ -938,7 +938,8 @@ If your local database is fresh, you only need:
 
 - `ENABLE_DEMO_DATA=1` in the API root `.env`
 - matching `ADMIN_USERNAME` / `ADMIN_PASSWORD`
-- provider fields in `examples/merchant-quickstart/.env` or `provider-config.local.json`
+- `examples/merchant-quickstart/quickstart.config.jsonc`
+- at minimum: `providerPlatform` plus the matching `alipay` or `stripe` block
 
 The current quickstart writes app-scoped provider config through the admin API before the HTTP server starts, so the default `alipay_page` path does not require `pnpm dev:web`.
 
@@ -948,7 +949,7 @@ pnpm dev:api
 pnpm dev:merchant-quickstart
 ```
 
-Then open `http://127.0.0.1:4100`. Full setup notes are in [examples/merchant-quickstart/README.md](https://github.com/aaaaaajie/OpenCashier/blob/main/examples/merchant-quickstart/README.md).
+Then open `http://127.0.0.1:4100`. For the full step-by-step bring-up path, use [Merchant Quickstart Guide](./merchant-quickstart). Repo-local notes remain in [examples/merchant-quickstart/README.md](https://github.com/aaaaaajie/OpenCashier/blob/main/examples/merchant-quickstart/README.md).
 
 ### 9.2 Compare the SDK create-order code
 
