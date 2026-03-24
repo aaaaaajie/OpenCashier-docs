@@ -4,8 +4,8 @@ node_modules/
 .wrangler/
 out/
 .env
-.env.*
 .dev.vars
 cloudflare-env.d.ts
 .DS_Store
 public/_pagefind/
+DEPLOY.md

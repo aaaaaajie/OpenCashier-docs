@@ -1,0 +1,11 @@
+.git
+.gitignore
+.next
+.open-next
+.wrangler
+node_modules
+out
+.env
+.env.*
+.DS_Store
+public/_pagefind

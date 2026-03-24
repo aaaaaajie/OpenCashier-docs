@@ -5,6 +5,7 @@ const withNextra = nextra({
 })
 
 export default withNextra({
+  output: 'standalone',
   reactStrictMode: true,
   i18n: {
     locales: ['en', 'zh-CN'],
